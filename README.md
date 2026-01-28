@@ -16,6 +16,14 @@ Generate clean screenshot cards from social media post URLs for presentations.
 
 ## Usage
 
+### UI (Web App)
+```bash
+# Start the local UI
+npm run ui
+```
+
+Then open: `http://localhost:3000`
+
 ### Single URL
 ```bash
 node screenshot.js "https://x.com/username/status/123456789"

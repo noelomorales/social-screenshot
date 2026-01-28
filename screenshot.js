@@ -3152,7 +3152,17 @@ async function main() {
   console.log('');
 }
 
-main().catch(e => {
-  console.error(`\n❌ Fatal error: ${e.message}\n`);
-  closeBrowser().then(() => process.exit(1));
-});
+if (require.main === module) {
+  main().catch(e => {
+    console.error(`\n❌ Fatal error: ${e.message}\n`);
+    closeBrowser().then(() => process.exit(1));
+  });
+} else {
+  module.exports = {
+    DEFAULT_SCREENSHOTS_DIR,
+    processInParallel,
+    processUrl,
+    closeBrowser,
+    detectPlatform,
+  };
+}
