@@ -1,0 +1,14 @@
+{
+  "name": "social-screenshot",
+  "version": "1.0.0",
+  "description": "Generate clean screenshot cards from social media post URLs",
+  "main": "screenshot.js",
+  "scripts": {
+    "start": "node screenshot.js",
+    "setup": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.41.0",
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
