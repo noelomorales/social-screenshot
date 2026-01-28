@@ -16,6 +16,14 @@ Generate clean screenshot cards from social media post URLs for presentations.
 
 ## Usage
 
+### UI (Web App)
+```bash
+# Start the local UI
+npm run ui
+```
+
+Then open: `http://localhost:3000`
+
 ### Single URL
 ```bash
 node screenshot.js "https://x.com/username/status/123456789"
@@ -57,11 +65,13 @@ node screenshot.js --file urls.txt --output ./slides --parallel 5
 For each post, the tool saves:
 
 1. **Card screenshot** (`-card.png`) - The styled card for your slides
-2. **Original images** (`-image-1.jpg`, `-image-2.jpg`, etc.) - Full resolution embedded images
+2. **Metadata** (`-metadata.json`) - Clean JSON with post details and media links
+3. **Original images** (`-image-1.jpg`, `-image-2.jpg`, etc.) - Full resolution embedded images
 
 Example output files:
 ```
 twitter-2016594947751756021-1706472000000-card.png      # The card
+twitter-2016594947751756021-1706472000000-metadata.json  # Metadata
 twitter-2016594947751756021-1706472000000-image-1.jpg   # Embedded image (full res)
 ```
 
@@ -88,6 +98,8 @@ https://forums.macrumors.com/threads/topic.123/post-789
 | Mastodon | Full support |
 | Threads | Basic support |
 | Articles/Newsletters | Basic support |
+| YouTube | Basic support |
+| TikTok | Basic support |
 
 ## Example Output
 
@@ -98,10 +110,12 @@ Processing 15 URLs (3 parallel)
 [1/15] Processing: https://x.com/zollotech/status/123
   ✅ Zollotech
      Card: twitter-123-1706472000000-card.png
+     Metadata: twitter-123-1706472000000-metadata.json
      Image: twitter-123-1706472000000-image-1.jpg
 [2/15] Processing: https://forums.macrumors.com/...
   ✅ ForumUser
      Card: macrumors-789-1706472001000-card.png
+     Metadata: macrumors-789-1706472001000-metadata.json
 ...
 
 ══════════════════════════════════════════════════

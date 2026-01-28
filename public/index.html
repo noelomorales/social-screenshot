@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Social Screenshot UI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>Social Screenshot UI</h1>
+        <p>Paste URLs and generate cards, metadata, and media files.</p>
+      </header>
+
+      <section class="panel">
+        <label for="urls">Post URLs (one per line)</label>
+        <textarea id="urls" rows="10" placeholder="https://x.com/user/status/123"></textarea>
+
+        <div class="options">
+          <div class="field">
+            <label for="outputDir">Output folder</label>
+            <input id="outputDir" type="text" value="./screenshots" />
+          </div>
+          <div class="field">
+            <label for="parallel">Parallel</label>
+            <input id="parallel" type="number" min="1" max="10" value="3" />
+          </div>
+          <div class="field checkbox">
+            <input id="thread" type="checkbox" />
+            <label for="thread">Thread mode (X only)</label>
+          </div>
+          <div class="field checkbox">
+            <input id="bento" type="checkbox" />
+            <label for="bento">Bento style</label>
+          </div>
+        </div>
+
+        <button id="run" class="primary">Generate</button>
+        <p class="hint">Files are saved on the server in the output folder.</p>
+      </section>
+
+      <section class="panel results">
+        <h2>Results</h2>
+        <div id="status" class="status">Waiting for input.</div>
+        <ul id="results"></ul>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

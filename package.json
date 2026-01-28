@@ -5,6 +5,7 @@
   "main": "screenshot.js",
   "scripts": {
     "start": "node screenshot.js",
+    "ui": "node ui-server.js",
     "setup": "npx playwright install chromium"
   },
   "dependencies": {

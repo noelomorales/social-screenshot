@@ -283,6 +283,89 @@ function generateFilename(url, platform) {
   return `${platform}-${urlHash}-${timestamp}.png`;
 }
 
+/**
+ * Extract YouTube video ID from URL
+ */
+function extractYouTubeId(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtu.be')) {
+      return parsed.pathname.replace('/', '').split(/[?#]/)[0];
+    }
+    const vParam = parsed.searchParams.get('v');
+    if (vParam) return vParam;
+    const shortsMatch = parsed.pathname.match(/\/shorts\/([^\/]+)/);
+    if (shortsMatch) return shortsMatch[1];
+    const embedMatch = parsed.pathname.match(/\/embed\/([^\/]+)/);
+    if (embedMatch) return embedMatch[1];
+  } catch (e) {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Build metadata payload (without base64 fields)
+ */
+function buildMetadataPayload(data, url, cardFilename, downloadedImages) {
+  const payload = {
+    platform: data.platform,
+    url: data.url || url,
+    card: path.basename(cardFilename),
+  };
+
+  if (data.platform === 'twitter-thread' && data.tweets) {
+    payload.tweets = data.tweets.map(tweet => ({
+      author: tweet.author ? {
+        name: tweet.author.name,
+        handle: tweet.author.handle,
+        avatarUrl: tweet.author.avatarUrl,
+        verified: tweet.author.verified,
+      } : undefined,
+      content: tweet.content,
+      timestamp: tweet.timestamp,
+      originalImageUrls: tweet.originalImageUrls || [],
+      isMainTweet: tweet.isMainTweet || false,
+    }));
+    payload.media = {
+      originalUrls: data.tweets.flatMap(tweet => tweet.originalImageUrls || []),
+      downloaded: downloadedImages,
+    };
+    return payload;
+  }
+
+  if (data.author) {
+    payload.author = {
+      name: data.author.name,
+      handle: data.author.handle,
+      title: data.author.title,
+      avatarUrl: data.author.avatarUrl,
+      verified: data.author.verified,
+    };
+  }
+
+  if (data.content) payload.content = data.content;
+  if (data.title) payload.title = data.title;
+  if (data.description) payload.description = data.description;
+  if (data.timestamp) payload.timestamp = data.timestamp;
+  if (data.metrics) payload.metrics = data.metrics;
+  if (data.siteName) payload.siteName = data.siteName;
+  if (data.instance) payload.instance = data.instance;
+  if (data.postNumber) payload.postNumber = data.postNumber;
+  if (data.reactions) payload.reactions = data.reactions;
+  if (data.video) payload.video = data.video;
+  if (data.faviconUrl) payload.faviconUrl = data.faviconUrl;
+  if (data.imageUrl) payload.imageUrl = data.imageUrl;
+  if (data.thumbnailUrl) payload.thumbnailUrl = data.thumbnailUrl;
+
+  payload.media = {
+    originalUrls: data.originalImageUrls || [],
+    downloaded: downloadedImages,
+  };
+
+  return payload;
+}
+
 // ============================================================================
 // PLATFORM DETECTION
 // ============================================================================
@@ -398,7 +481,8 @@ async function scrapeTwitter(url) {
     await context.close();
 
     // Convert images to base64 for the card
-    const avatarBase64 = await imageToBase64(data.avatar);
+    const avatarUrl = data.avatar;
+    const avatarBase64 = await imageToBase64(avatarUrl);
     const imagesBase64 = [];
     for (const imgUrl of data.images.slice(0, 4)) {
       const base64 = await imageToBase64(imgUrl);
@@ -422,6 +506,7 @@ async function scrapeTwitter(url) {
         name: data.authorName,
         handle: data.authorHandle,
         avatar: avatarBase64,
+        avatarUrl: avatarUrl,
         verified: false, // Can't easily detect from embed
       },
       content: data.text,
@@ -535,6 +620,7 @@ async function scrapeTwitterThread(url) {
           name: tweet.authorName,
           handle: tweet.authorHandle,
           avatar: avatarBase64,
+          avatarUrl: tweet.avatar,
           verified: false,
         },
         content: tweet.text,
@@ -592,8 +678,9 @@ async function scrapeMacrumors(url) {
                     postEl.find('time').attr('datetime') || '';
 
   // Get avatar
-  const avatarUrl = postEl.find('.message-avatar img').attr('src') || '';
-  const avatarBase64 = await imageToBase64(avatarUrl.startsWith('//') ? 'https:' + avatarUrl : avatarUrl);
+  const avatarUrlRaw = postEl.find('.message-avatar img').attr('src') || '';
+  const avatarUrl = avatarUrlRaw.startsWith('//') ? 'https:' + avatarUrlRaw : avatarUrlRaw;
+  const avatarBase64 = await imageToBase64(avatarUrl);
 
   // Get post content (text only, clean up)
   let content = contentEl.clone();
@@ -624,6 +711,7 @@ async function scrapeMacrumors(url) {
       name: authorName,
       title: authorTitle,
       avatar: avatarBase64,
+      avatarUrl: avatarUrl,
     },
     content: text,
     images: imagesBase64,
@@ -686,7 +774,8 @@ async function scrapeBluesky(url) {
 
 async function formatBlueskyPost(post, url) {
   // Get avatar
-  const avatarBase64 = await imageToBase64(post.author?.avatar);
+  const avatarUrl = post.author?.avatar || '';
+  const avatarBase64 = await imageToBase64(avatarUrl);
 
   // Get embedded images
   const images = [];
@@ -712,6 +801,7 @@ async function formatBlueskyPost(post, url) {
       name: post.author?.displayName || post.author?.handle || 'Unknown',
       handle: post.author?.handle || 'unknown',
       avatar: avatarBase64,
+      avatarUrl: avatarUrl,
     },
     content: post.record?.text || '',
     images: imagesBase64,
@@ -745,7 +835,8 @@ async function scrapeMastodon(url) {
   const data = await fetchJSON(apiUrl);
 
   // Get avatar
-  const avatarBase64 = await imageToBase64(data.account?.avatar);
+  const avatarUrl = data.account?.avatar || '';
+  const avatarBase64 = await imageToBase64(avatarUrl);
 
   // Get media attachments
   const images = [];
@@ -775,6 +866,7 @@ async function scrapeMastodon(url) {
       name: data.account?.display_name || data.account?.username || 'Unknown',
       handle: `@${data.account?.username}@${instance}`,
       avatar: avatarBase64,
+      avatarUrl: avatarUrl,
     },
     content: content,
     images: imagesBase64,
@@ -814,6 +906,7 @@ async function scrapeThreads(url) {
       name: authorName,
       handle: authorName.toLowerCase().replace(/\s/g, ''),
       avatar: avatarBase64,
+      avatarUrl: image,
     },
     content: description,
     images: [],
@@ -843,8 +936,9 @@ async function scrapeArticle(url) {
 
   const imageBase64 = await imageToBase64(image);
   let faviconBase64 = null;
+  let faviconUrl = '';
   if (favicon) {
-    const faviconUrl = favicon.startsWith('http') ? favicon : new URL(favicon, url).href;
+    faviconUrl = favicon.startsWith('http') ? favicon : new URL(favicon, url).href;
     faviconBase64 = await imageToBase64(faviconUrl);
   }
 
@@ -854,8 +948,137 @@ async function scrapeArticle(url) {
     title: title,
     description: description.slice(0, 300),
     image: imageBase64,
+    imageUrl: image,
     originalImageUrls: image ? [image] : [], // Original image URL for download
     favicon: faviconBase64,
+    faviconUrl: faviconUrl,
+    url: url,
+  };
+}
+
+/**
+ * YouTube Scraper (oEmbed + meta tag fallback)
+ */
+async function scrapeYouTube(url) {
+  const videoId = extractYouTubeId(url);
+  let oembed = null;
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    oembed = await fetchJSON(oembedUrl);
+  } catch (e) {
+    oembed = null;
+  }
+
+  let title = oembed?.title || '';
+  let authorName = oembed?.author_name || '';
+  let authorUrl = oembed?.author_url || '';
+  let thumbnailUrl = oembed?.thumbnail_url || '';
+  let description = '';
+
+  if (!title || !thumbnailUrl || !description) {
+    try {
+      const html = await fetchHTML(url);
+      const $ = cheerio.load(html);
+      if (!title) {
+        title = $('meta[property="og:title"]').attr('content') || $('title').text() || 'YouTube';
+      }
+      if (!description) {
+        description = $('meta[name="description"]').attr('content') ||
+                      $('meta[property="og:description"]').attr('content') || '';
+      }
+      if (!thumbnailUrl) {
+        thumbnailUrl = $('meta[property="og:image"]').attr('content') || '';
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (!thumbnailUrl && videoId) {
+    thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+  }
+
+  const thumbnailBase64 = await imageToBase64(thumbnailUrl);
+
+  return {
+    platform: 'youtube',
+    author: {
+      name: authorName || 'YouTube',
+      handle: authorUrl ? authorUrl.replace(/^https?:\/\//, '') : '',
+      avatar: null,
+      avatarUrl: '',
+    },
+    title: title || 'YouTube Video',
+    description: description.slice(0, 300),
+    thumbnail: thumbnailBase64,
+    thumbnailUrl: thumbnailUrl,
+    originalImageUrls: thumbnailUrl ? [thumbnailUrl] : [],
+    video: {
+      id: videoId,
+      url: url,
+      authorUrl: authorUrl,
+    },
+    url: url,
+  };
+}
+
+/**
+ * TikTok Scraper (oEmbed + meta tag fallback)
+ */
+async function scrapeTikTok(url) {
+  let oembed = null;
+  try {
+    const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
+    oembed = await fetchJSON(oembedUrl);
+  } catch (e) {
+    oembed = null;
+  }
+
+  let title = oembed?.title || '';
+  let authorName = oembed?.author_name || '';
+  let authorUrl = oembed?.author_url || '';
+  let thumbnailUrl = oembed?.thumbnail_url || '';
+  let description = '';
+
+  if (!title || !thumbnailUrl || !description) {
+    try {
+      const html = await fetchHTML(url);
+      const $ = cheerio.load(html);
+      if (!title) {
+        title = $('meta[property="og:title"]').attr('content') || $('title').text() || 'TikTok';
+      }
+      if (!description) {
+        description = $('meta[property="og:description"]').attr('content') ||
+                      $('meta[name="description"]').attr('content') || '';
+      }
+      if (!thumbnailUrl) {
+        thumbnailUrl = $('meta[property="og:image"]').attr('content') || '';
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const thumbnailBase64 = await imageToBase64(thumbnailUrl);
+  const handle = authorName ? (authorName.startsWith('@') ? authorName : `@${authorName}`) : '';
+
+  return {
+    platform: 'tiktok',
+    author: {
+      name: authorName || 'TikTok',
+      handle: handle,
+      avatar: null,
+      avatarUrl: '',
+    },
+    title: title || 'TikTok Video',
+    description: description.slice(0, 300),
+    thumbnail: thumbnailBase64,
+    thumbnailUrl: thumbnailUrl,
+    originalImageUrls: thumbnailUrl ? [thumbnailUrl] : [],
+    video: {
+      url: url,
+      authorUrl: authorUrl,
+    },
     url: url,
   };
 }
@@ -1603,6 +1826,200 @@ function renderArticleCard(data) {
   `;
 }
 
+/**
+ * YouTube Card Template
+ */
+function renderYouTubeCard(data) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          background: #000;
+          padding: 20px;
+        }
+        .card {
+          background: #0f0f0f;
+          border-radius: 16px;
+          overflow: hidden;
+          border: 1px solid #272727;
+          max-width: ${CARD_WIDTH}px;
+        }
+        .thumbnail {
+          position: relative;
+          width: 100%;
+          height: 310px;
+          background: #1a1a1a;
+        }
+        .thumbnail img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .play {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          background: rgba(0, 0, 0, 0.65);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .play svg {
+          width: 20px;
+          height: 20px;
+          fill: #fff;
+          margin-left: 4px;
+        }
+        .content {
+          padding: 16px 18px 18px;
+        }
+        .platform {
+          color: #ff0000;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+        }
+        .title {
+          color: #fff;
+          font-size: 18px;
+          font-weight: 600;
+          line-height: 1.35;
+          margin-bottom: 8px;
+        }
+        .author {
+          color: #9a9a9a;
+          font-size: 13px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="thumbnail">
+          ${data.thumbnail ? `<img src="${data.thumbnail}" alt="Video thumbnail">` : ''}
+          <div class="play">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+        </div>
+        <div class="content">
+          <div class="platform">YouTube</div>
+          <div class="title">${escapeHtml(data.title)}</div>
+          <div class="author">${escapeHtml(data.author.name)}</div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * TikTok Card Template
+ */
+function renderTikTokCard(data) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          background: #000;
+          padding: 20px;
+        }
+        .card {
+          background: #0b0b0f;
+          border-radius: 16px;
+          overflow: hidden;
+          border: 1px solid #23232f;
+          max-width: ${CARD_WIDTH}px;
+        }
+        .thumbnail {
+          position: relative;
+          width: 100%;
+          height: 310px;
+          background: #1a1a1a;
+        }
+        .thumbnail img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .play {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: 56px;
+          height: 56px;
+          border-radius: 16px;
+          background: rgba(0, 0, 0, 0.6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .play svg {
+          width: 18px;
+          height: 18px;
+          fill: #fff;
+          margin-left: 4px;
+        }
+        .content {
+          padding: 16px 18px 18px;
+        }
+        .platform {
+          color: #25f4ee;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+        }
+        .title {
+          color: #fff;
+          font-size: 17px;
+          font-weight: 600;
+          line-height: 1.35;
+          margin-bottom: 8px;
+        }
+        .author {
+          color: #9a9a9a;
+          font-size: 13px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="thumbnail">
+          ${data.thumbnail ? `<img src="${data.thumbnail}" alt="Video thumbnail">` : ''}
+          <div class="play">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+        </div>
+        <div class="content">
+          <div class="platform">TikTok</div>
+          <div class="title">${escapeHtml(data.title)}</div>
+          <div class="author">${escapeHtml(data.author.handle || data.author.name)}</div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 // ============================================================================
 // BENTO STYLE TEMPLATES (Apple Keynote style)
 // ============================================================================
@@ -2241,6 +2658,200 @@ function renderBentoArticleCard(data) {
 }
 
 /**
+ * Bento YouTube Card Template
+ */
+function renderBentoYouTubeCard(data) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Helvetica, Arial, sans-serif;
+          background: transparent;
+          padding: 0;
+        }
+        .card {
+          background: #1c1c1e;
+          border-radius: 24px;
+          overflow: hidden;
+          max-width: ${CARD_WIDTH}px;
+        }
+        .thumbnail {
+          position: relative;
+          width: 100%;
+          height: 220px;
+          background: #2c2c2e;
+        }
+        .thumbnail img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .play {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: 52px;
+          height: 52px;
+          border-radius: 50%;
+          background: rgba(0, 0, 0, 0.6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .play svg {
+          width: 18px;
+          height: 18px;
+          fill: #fff;
+          margin-left: 3px;
+        }
+        .content {
+          padding: 22px 24px 24px;
+        }
+        .platform {
+          color: #ff453a;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          margin-bottom: 10px;
+        }
+        .title {
+          color: #fff;
+          font-size: 18px;
+          font-weight: 600;
+          line-height: 1.3;
+          letter-spacing: -0.02em;
+          margin-bottom: 8px;
+        }
+        .author {
+          color: rgba(255,255,255,0.55);
+          font-size: 14px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="thumbnail">
+          ${data.thumbnail ? `<img src="${data.thumbnail}" alt="Video thumbnail">` : ''}
+          <div class="play">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+        </div>
+        <div class="content">
+          <div class="platform">YouTube</div>
+          <div class="title">${escapeHtml(data.title)}</div>
+          <div class="author">${escapeHtml(data.author.name)}</div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * Bento TikTok Card Template
+ */
+function renderBentoTikTokCard(data) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Helvetica, Arial, sans-serif;
+          background: transparent;
+          padding: 0;
+        }
+        .card {
+          background: #1c1c1e;
+          border-radius: 24px;
+          overflow: hidden;
+          max-width: ${CARD_WIDTH}px;
+        }
+        .thumbnail {
+          position: relative;
+          width: 100%;
+          height: 220px;
+          background: #2c2c2e;
+        }
+        .thumbnail img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .play {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: 52px;
+          height: 52px;
+          border-radius: 16px;
+          background: rgba(0, 0, 0, 0.6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .play svg {
+          width: 18px;
+          height: 18px;
+          fill: #fff;
+          margin-left: 3px;
+        }
+        .content {
+          padding: 22px 24px 24px;
+        }
+        .platform {
+          color: #25f4ee;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          margin-bottom: 10px;
+        }
+        .title {
+          color: #fff;
+          font-size: 18px;
+          font-weight: 600;
+          line-height: 1.3;
+          letter-spacing: -0.02em;
+          margin-bottom: 8px;
+        }
+        .author {
+          color: rgba(255,255,255,0.55);
+          font-size: 14px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="thumbnail">
+          ${data.thumbnail ? `<img src="${data.thumbnail}" alt="Video thumbnail">` : ''}
+          <div class="play">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+        </div>
+        <div class="content">
+          <div class="platform">TikTok</div>
+          <div class="title">${escapeHtml(data.title)}</div>
+          <div class="author">${escapeHtml(data.author.handle || data.author.name)}</div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+/**
  * Escape HTML special characters
  */
 function escapeHtml(text) {
@@ -2316,6 +2927,7 @@ async function processUrl(url, index, total, outputDir, options = {}) {
     // Scrape data based on platform
     let data;
     let html;
+    let metadataSource;
 
     switch (platform) {
       case 'twitter':
@@ -2328,30 +2940,47 @@ async function processUrl(url, index, total, outputDir, options = {}) {
             author: threadData.tweets[0]?.author || { name: 'Unknown' },
             originalImageUrls: threadData.tweets.flatMap(t => t.originalImageUrls || []),
           };
+          metadataSource = threadData;
         } else {
           data = await scrapeTwitter(url);
           html = options.bento ? renderBentoTwitterCard(data) : renderTwitterCard(data);
+          metadataSource = data;
         }
         break;
       case 'macrumors':
         data = await scrapeMacrumors(url);
         html = options.bento ? renderBentoMacrumorsCard(data) : renderMacrumorsCard(data);
+        metadataSource = data;
         break;
       case 'bluesky':
         data = await scrapeBluesky(url);
         html = options.bento ? renderBentoBlueskyCard(data) : renderBlueskyCard(data);
+        metadataSource = data;
         break;
       case 'mastodon':
         data = await scrapeMastodon(url);
         html = options.bento ? renderBentoMastodonCard(data) : renderMastodonCard(data);
+        metadataSource = data;
         break;
       case 'threads':
         data = await scrapeThreads(url);
         html = options.bento ? renderBentoTwitterCard(data) : renderTwitterCard(data);
+        metadataSource = data;
+        break;
+      case 'youtube':
+        data = await scrapeYouTube(url);
+        html = options.bento ? renderBentoYouTubeCard(data) : renderYouTubeCard(data);
+        metadataSource = data;
+        break;
+      case 'tiktok':
+        data = await scrapeTikTok(url);
+        html = options.bento ? renderBentoTikTokCard(data) : renderTikTokCard(data);
+        metadataSource = data;
         break;
       case 'article':
         data = await scrapeArticle(url);
         html = options.bento ? renderBentoArticleCard(data) : renderArticleCard(data);
+        metadataSource = data;
         break;
       default:
         throw new Error('Platform not implemented');
@@ -2380,18 +3009,24 @@ async function processUrl(url, index, total, outputDir, options = {}) {
       }
     }
 
+    const metadataFilename = path.join(outputDir, `${baseFilename}-metadata.json`);
+    const metadataPayload = buildMetadataPayload(metadataSource || data, url, cardFilename, downloadedImages);
+    fs.writeFileSync(metadataFilename, JSON.stringify(metadataPayload, null, 2));
+
     // Log results
     console.log(`${prefix}  ✅ ${author}`);
     console.log(`${prefix}     Card: ${path.basename(cardFilename)}`);
     if (downloadedImages.length > 0) {
       downloadedImages.forEach(img => console.log(`${prefix}     Image: ${img}`));
     }
+    console.log(`${prefix}     Metadata: ${path.basename(metadataFilename)}`);
 
     return {
       success: true,
       url,
       cardFilename: path.basename(cardFilename),
       imageFilenames: downloadedImages,
+      metadataFilename: path.basename(metadataFilename),
       author
     };
 
@@ -2457,6 +3092,7 @@ async function main() {
 ║  SUPPORTED PLATFORMS:                                         ║
 ║  • Twitter/X        • Bluesky         • Threads               ║
 ║  • MacRumors Forums • Mastodon        • Articles              ║
+║  • YouTube          • TikTok                                  ║
 ╚═══════════════════════════════════════════════════════════════╝
     `);
     process.exit(1);
@@ -2516,7 +3152,17 @@ async function main() {
   console.log('');
 }
 
-main().catch(e => {
-  console.error(`\n❌ Fatal error: ${e.message}\n`);
-  closeBrowser().then(() => process.exit(1));
-});
+if (require.main === module) {
+  main().catch(e => {
+    console.error(`\n❌ Fatal error: ${e.message}\n`);
+    closeBrowser().then(() => process.exit(1));
+  });
+} else {
+  module.exports = {
+    DEFAULT_SCREENSHOTS_DIR,
+    processInParallel,
+    processUrl,
+    closeBrowser,
+    detectPlatform,
+  };
+}
